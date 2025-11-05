@@ -31,6 +31,7 @@ abbrev Symbol := String
 inductive SortType where
   | bool : SortType
   | int : SortType
+  | proof : SortType  -- Proof sort for proof terms
   | func : List SortType → SortType → SortType
   deriving Repr, BEq, Inhabited
 
@@ -129,6 +130,7 @@ def Clause.unit (f : Formula) : Clause :=
 def SortType.toString : SortType → String
   | SortType.bool => "Bool"
   | SortType.int => "Int"
+  | SortType.proof => "Proof"
   | SortType.func args ret => s!"({String.intercalate " " (args.map toString)} -> {ret.toString})"
 
 def Term.toString : Term → String
