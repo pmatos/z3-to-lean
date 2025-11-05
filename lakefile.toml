@@ -1,0 +1,10 @@
+name = "z3-to-lean"
+version = "0.1.0"
+defaultTargets = ["z3-to-lean"]
+
+[[lean_lib]]
+name = "Z3ToLean"
+
+[[lean_exe]]
+name = "z3-to-lean"
+root = "Main"
