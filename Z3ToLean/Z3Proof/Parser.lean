@@ -205,6 +205,20 @@ partial def parseSortType : SExpr → Except String SortType
     | none => Except.error "Function type missing return type"
   | other => Except.error s!"Invalid sort type: {repr other}"
 
+-- Infer sort type for common operators
+def inferOperatorSort (sym : Symbol) : SortType :=
+  match sym with
+  -- Comparison operators return Bool
+  | "=" | "<" | ">" | "<=" | ">=" | "distinct" => SortType.bool
+  -- Logical operators return Bool
+  | "not" | "and" | "or" | "=>" | "iff" | "xor" | "ite" => SortType.bool
+  -- Arithmetic operators return Int
+  | "+" | "-" | "*" | "div" | "mod" | "abs" => SortType.int
+  -- Proof constructors return Proof
+  | "farkas" | "cc" | "euf" | "rup" => SortType.proof
+  -- Default to Int for unknown operators
+  | _ => SortType.int
+
 -- Parse term
 partial def parseTerm : SExpr → Except String Term
   | SExpr.atom a =>
@@ -217,11 +231,14 @@ partial def parseTerm : SExpr → Except String Term
       | Except.ok b => Except.ok (Term.boolLit b)
       | Except.error _ =>
         -- Treat as variable or constant reference
-        Except.ok (Term.const a SortType.int)  -- Default to Int for now
+        -- Use Bool as default since most constants in proofs are boolean
+        Except.ok (Term.const a SortType.bool)
   | SExpr.list [] => Except.error "Empty list is not a valid term"
   | SExpr.list (SExpr.atom sym :: args) => do
     let termArgs ← args.mapM parseTerm
-    Except.ok (Term.app sym termArgs SortType.int)  -- Default to Int for now
+    -- Infer sort from operator
+    let sort := inferOperatorSort sym
+    Except.ok (Term.app sym termArgs sort)
   | SExpr.list _ => Except.error "Invalid term: list must start with symbol"
 
 -- Parse formula
@@ -316,6 +333,18 @@ partial def parseProofCommand : SExpr → Except String ProofCommand
     let sortType ← parseSortType sort
     let termVal ← parseTerm term
     Except.ok (ProofCommand.defineConst id sortType termVal)
+  | SExpr.list [SExpr.atom "define-fun", SExpr.atom sym, SExpr.list params, ret, body] => do
+    -- Parse parameters: each is (name sort)
+    let parseParam : SExpr → Except String (VarName × SortType) := fun sexpr =>
+      match sexpr with
+      | SExpr.list [SExpr.atom name, sort] => do
+          let sortType ← parseSortType sort
+          Except.ok (name, sortType)
+      | _ => Except.error s!"Invalid parameter format: {repr sexpr}"
+    let paramList ← params.mapM parseParam
+    let retSort ← parseSortType ret
+    let bodyTerm ← parseTerm body
+    Except.ok (ProofCommand.defineFun sym paramList retSort bodyTerm)
   | SExpr.list [SExpr.atom "assume", formula] => do
     let f ← parseFormula formula
     Except.ok (ProofCommand.assume f)

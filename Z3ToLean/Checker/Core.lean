@@ -111,8 +111,9 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
     Except.ok (ctx.defineConst id sort term)
 
   | ProofCommand.defineFun sym params ret body => do
-    -- Validate function body
-    ctx.validateTerm body
+    -- Validate function body with parameters as valid variables
+    let paramNames := params.map (·.1)
+    ctx.validateTermWithVars paramNames body
 
     -- Store function definition (also declares it)
     let argSorts := params.map (·.2)
@@ -125,9 +126,8 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
 
   | ProofCommand.assume formula => do
     ctx.validateFormula formula
-    -- Resolve formula references before storing as assumption
-    let resolvedFormula := ctx.resolveFormula formula
-    Except.ok (ctx.assume resolvedFormula)
+    -- Store formula as-is (don't resolve for SAT-level reasoning)
+    Except.ok (ctx.assume formula)
 
   | ProofCommand.infer clause hint => do
     -- Validate all formulas in the clause
@@ -157,7 +157,7 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
       let assumptionClauses := ctx.assumptions.map Clause.unit
       -- Combine with previously derived clauses
       let allClauses := assumptionClauses ++ ctx.derived
-      -- Validate RUP strictly (for debugging)
+      -- Validate RUP (uses Boolean abstraction, no formula resolution needed)
       validateRUP allClauses clause
       Except.ok (ctx.addDerived clause)
 
@@ -201,12 +201,20 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.tseitin =>
-      -- Tseitin transformation
+      -- Tseitin transformation: CNF conversion preserving equisatisfiability
+      -- TODO: Implement full Tseitin validation
+      -- Should verify that the clause is a valid Tseitin encoding step
+      -- For now, accept all Tseitin-tagged inferences
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.inst bindings =>
       -- Quantifier instantiation
-      -- Validate all terms in bindings
+      -- TODO: Implement full quantifier instantiation validation
+      -- Should verify that:
+      -- 1. The clause is derived from a quantified formula
+      -- 2. The bindings are valid substitutions
+      -- 3. The resulting clause follows from the instantiation
+      -- For now, just validate that all terms in bindings are well-formed
       bindings.foldlM (fun _ (_var, term) => ctx.validateTerm term) ()
       Except.ok (ctx.addDerived clause)
 

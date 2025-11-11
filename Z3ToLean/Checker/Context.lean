@@ -119,15 +119,16 @@ def Context.isFunctionDefined (ctx : Context) (sym : Symbol) : Bool :=
   if Context.isBuiltinFunction sym then true
   else ctx.lookupFunction sym |>.isSome
 
-partial def Context.validateTerm (ctx : Context) (t : Term) : Except String Unit :=
+-- Validate term with additional valid variable names (for function parameters)
+partial def Context.validateTermWithVars (ctx : Context) (validVars : List VarName) (t : Term) : Except String Unit :=
   match t with
   | Term.const id _ =>
-      if ctx.isConstDefined id then
+      if validVars.contains id || ctx.isConstDefined id then
         Except.ok ()
       else
         Except.error s!"Undefined constant: {id}"
   | Term.var name _ =>
-      if ctx.isConstDefined name then
+      if validVars.contains name || ctx.isConstDefined name then
         Except.ok ()
       else
         Except.error s!"Undefined variable: {name}"
@@ -137,7 +138,11 @@ partial def Context.validateTerm (ctx : Context) (t : Term) : Except String Unit
       if !ctx.isFunctionDefined sym then
         Except.error s!"Undefined function: {sym}"
       else
-        args.foldlM (fun _ arg => ctx.validateTerm arg) ()
+        args.foldlM (fun _ arg => ctx.validateTermWithVars validVars arg) ()
+
+-- Validate term (no additional variables)
+partial def Context.validateTerm (ctx : Context) (t : Term) : Except String Unit :=
+  ctx.validateTermWithVars [] t
 
 partial def Context.validateFormula (ctx : Context) (f : Formula) : Except String Unit :=
   match f with
