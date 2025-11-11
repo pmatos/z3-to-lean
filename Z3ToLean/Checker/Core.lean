@@ -6,10 +6,12 @@ Processes proof commands sequentially and verifies their correctness.
 
 import Z3ToLean.Z3Proof.AST
 import Z3ToLean.Checker.Context
+import Z3ToLean.Algorithms.Farkas
 
 namespace Z3Proof.Checker
 
 open Z3Proof
+open Z3Proof.Algorithms
 
 -- Process a single proof command
 def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context :=
@@ -22,6 +24,30 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
 
   | ProofCommand.defineConst id sort term => do
     ctx.validateTerm term
+
+    -- If this is a proof term (Proof sort), validate Farkas coefficients
+    if sort == SortType.proof then
+      match term with
+      | Term.app "farkas" args _ =>
+          -- farkas takes alternating (coeff, formula) arguments
+          -- Validate coefficients are non-negative
+          let rec checkCoeffs (remaining : List Term) (idx : Nat) : Except String Unit :=
+            match remaining with
+            | [] => Except.ok ()
+            | t :: ts =>
+                if idx % 2 == 0 then  -- Even index = coefficient
+                  match t with
+                  | Term.intLit n =>
+                      if n < 0 then
+                        Except.error s!"Farkas: negative coefficient {n} in proof term {id}"
+                      else
+                        checkCoeffs ts (idx + 1)
+                  | _ => checkCoeffs ts (idx + 1)
+                else  -- Odd index = formula reference
+                  checkCoeffs ts (idx + 1)
+          checkCoeffs args 0
+      | _ => Except.ok ()
+
     Except.ok (ctx.defineConst id sort term)
 
   | ProofCommand.defineFun sym params ret body =>
@@ -49,9 +75,15 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
 
     | ProofHint.farkas coeffs =>
       -- Farkas: verify linear arithmetic certificate
-      -- Validate that all referenced formulas exist
+      -- Step 1: Validate that all referenced formulas exist
       let formulas := coeffs.map (·.2)
       formulas.foldlM (fun _ f => ctx.validateFormula f) ()
+
+      -- Step 2: Validate Farkas coefficients
+      let farkasCoeffs := coeffs.map fun (coeff, formula) =>
+        { coeff := coeff, formula := formula : FarkasCoeff }
+      validateFarkasSimple farkasCoeffs
+
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.euf goal premises _proofOpt =>
