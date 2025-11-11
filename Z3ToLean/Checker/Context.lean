@@ -166,7 +166,8 @@ def Context.validateClause (ctx : Context) (c : Clause) : Except String Unit :=
 
 /-! ## Term to Formula Conversion -/
 
-partial def Context.termToFormula (ctx : Context) (term : Term) : Except String Formula :=
+mutual
+  partial def Context.termToFormula (ctx : Context) (term : Term) : Except String Formula :=
   match term with
   | Term.const id _ =>
       -- Recursively resolve if this is a defined constant
@@ -194,5 +195,24 @@ partial def Context.termToFormula (ctx : Context) (term : Term) : Except String 
       let f2 ← ctx.termToFormula t2
       Except.ok (Formula.implies f1 f2)
   | _ => Except.error s!"Cannot convert term to formula: {repr term}"
+
+  -- Resolve a formula by expanding any formula references (atoms that are defined constants)
+  partial def Context.resolveFormula (ctx : Context) (f : Formula) : Formula :=
+    match f with
+    | Formula.atom id =>
+        -- Check if this atom refers to a defined boolean constant
+        match ctx.lookupDefinition id with
+        | some (SortType.bool, term) =>
+            -- Try to convert the term to a formula and resolve recursively
+            match ctx.termToFormula term with
+            | Except.ok resolvedFormula => ctx.resolveFormula resolvedFormula
+            | Except.error _ => f  -- Keep as atom if conversion fails
+        | _ => f  -- Keep as atom if not a defined constant
+    | Formula.not f' => Formula.not (ctx.resolveFormula f')
+    | Formula.and fs => Formula.and (fs.map ctx.resolveFormula)
+    | Formula.or fs => Formula.or (fs.map ctx.resolveFormula)
+    | Formula.implies f1 f2 => Formula.implies (ctx.resolveFormula f1) (ctx.resolveFormula f2)
+    | _ => f  -- Other formulas (eq, lt, gt, etc.) don't have sub-formulas to resolve
+end
 
 end Z3Proof.Checker

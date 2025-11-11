@@ -41,7 +41,7 @@ def VarAssignment.set (va : VarAssignment) (id : Id) (a : Assignment) : VarAssig
 
 /-! ## Formula Evaluation under Assignment -/
 
-def evaluateFormulaUnderAssignment (va : VarAssignment) (f : Formula) : Option Bool :=
+partial def evaluateFormulaUnderAssignment (va : VarAssignment) (f : Formula) : Option Bool :=
   match f with
   | Formula.atom id =>
       match va.lookup id with
@@ -52,7 +52,33 @@ def evaluateFormulaUnderAssignment (va : VarAssignment) (f : Formula) : Option B
       match evaluateFormulaUnderAssignment va f' with
       | some b => some (!b)
       | none => none
-  | _ => none  -- For now, only handle atoms and negations
+  | Formula.and fs =>
+      -- AND is true if all sub-formulas are true, false if any is false, none if any is unknown
+      let evals := fs.map (evaluateFormulaUnderAssignment va)
+      if evals.any (· == some false) then
+        some false
+      else if evals.all (· == some true) then
+        some true
+      else
+        none
+  | Formula.or fs =>
+      -- OR is true if any sub-formula is true, false if all are false, none if any is unknown
+      let evals := fs.map (evaluateFormulaUnderAssignment va)
+      if evals.any (· == some true) then
+        some true
+      else if evals.all (· == some false) then
+        some false
+      else
+        none
+  | Formula.implies f1 f2 =>
+      -- IMPLIES: (not f1) or f2
+      match evaluateFormulaUnderAssignment va f1, evaluateFormulaUnderAssignment va f2 with
+      | some false, _ => some true    -- false => anything is true
+      | _, some true => some true     -- anything => true is true
+      | some true, some false => some false   -- true => false is false
+      | none, _ => none               -- unknown antecedent
+      | _, none => none               -- unknown consequent
+  | _ => none  -- eq, lt, gt, le, ge require term evaluation (not implemented for SAT)
 
 def clauseIsSatisfied (va : VarAssignment) (c : Clause) : Bool :=
   c.literals.any fun f => evaluateFormulaUnderAssignment va f == some true

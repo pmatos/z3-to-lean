@@ -121,7 +121,9 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
 
   | ProofCommand.assume formula => do
     ctx.validateFormula formula
-    Except.ok (ctx.assume formula)
+    -- Resolve formula references before storing as assumption
+    let resolvedFormula := ctx.resolveFormula formula
+    Except.ok (ctx.assume resolvedFormula)
 
   | ProofCommand.infer clause hint => do
     -- Validate all formulas in the clause
@@ -151,10 +153,8 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
       let assumptionClauses := ctx.assumptions.map Clause.unit
       -- Combine with previously derived clauses
       let allClauses := assumptionClauses ++ ctx.derived
-      -- Try to validate RUP (but don't fail if it doesn't work)
-      match validateRUP allClauses clause with
-      | Except.ok () => pure ()
-      | Except.error _ => pure ()  -- Silently accept for now
+      -- Validate RUP strictly (for debugging)
+      validateRUP allClauses clause
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.farkas coeffs =>
