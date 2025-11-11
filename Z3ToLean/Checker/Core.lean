@@ -110,10 +110,14 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
 
     Except.ok (ctx.defineConst id sort term)
 
-  | ProofCommand.defineFun sym params ret body =>
-    -- For now, just treat as a function declaration
+  | ProofCommand.defineFun sym params ret body => do
+    -- Validate function body
+    ctx.validateTerm body
+
+    -- Store function definition (also declares it)
     let argSorts := params.map (·.2)
-    Except.ok (ctx.declareFunction sym argSorts ret)
+    let ctx' := ctx.declareFunction sym argSorts ret
+    Except.ok (ctx'.defineFunction sym params ret body)
 
   | ProofCommand.declareProofRule sym sorts =>
     -- Proof rules are like function declarations with Proof return type
@@ -163,7 +167,9 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
       let formulas := coeffs.map (·.2)
       formulas.foldlM (fun _ f => ctx.validateFormula f) ()
 
-      -- Step 2: Validate Farkas coefficients
+      -- Step 2: Validate Farkas certificate
+      -- TODO: Implement full arithmetic validation (validateFarkasFull)
+      -- Currently only checks non-negative coefficients
       let farkasCoeffs := coeffs.map fun (coeff, formula) =>
         { coeff := coeff, formula := formula : FarkasCoeff }
       validateFarkasSimple farkasCoeffs
@@ -208,9 +214,9 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
       -- Should never reach here - references are resolved above
       Except.error s!"Unresolved proof term reference: {id}"
 
-  | ProofCommand.del clause =>
-    -- Delete clause (garbage collection)
-    -- For now, just ignore deletions
+  | ProofCommand.del _clause =>
+    -- TODO: Track deleted clauses for memory management
+    -- For now, just ignore deletions (no impact on soundness)
     Except.ok ctx
 
 -- Process a list of commands

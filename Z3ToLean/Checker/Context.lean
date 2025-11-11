@@ -28,6 +28,8 @@ def VerifyResult.isOk : VerifyResult → Bool
 structure Context where
   -- Function declarations: name → (arg sorts, return sort)
   functions : List (Symbol × (List SortType × SortType))
+  -- Function definitions: name → (params, return sort, body)
+  functionDefs : List (Symbol × (List (VarName × SortType) × SortType × Term))
   -- Constant declarations: name → sort
   constants : List (Id × SortType)
   -- Defined constants: name → (sort, term)
@@ -41,6 +43,7 @@ structure Context where
 -- Empty context
 def Context.empty : Context :=
   { functions := []
+  , functionDefs := []
   , constants := []
   , definitions := []
   , assumptions := []
@@ -59,6 +62,10 @@ def Context.declareConst (ctx : Context) (id : Id) (sort : SortType) : Context :
 def Context.defineConst (ctx : Context) (id : Id) (sort : SortType) (term : Term) : Context :=
   { ctx with definitions := (id, (sort, term)) :: ctx.definitions }
 
+-- Add function definition
+def Context.defineFunction (ctx : Context) (sym : Symbol) (params : List (VarName × SortType)) (ret : SortType) (body : Term) : Context :=
+  { ctx with functionDefs := (sym, (params, ret, body)) :: ctx.functionDefs }
+
 -- Add assumption
 def Context.assume (ctx : Context) (f : Formula) : Context :=
   { ctx with assumptions := f :: ctx.assumptions }
@@ -76,6 +83,9 @@ def Context.lookupConst (ctx : Context) (id : Id) : Option SortType :=
 
 def Context.lookupDefinition (ctx : Context) (id : Id) : Option (SortType × Term) :=
   ctx.definitions.lookup id
+
+def Context.lookupFunctionDef (ctx : Context) (sym : Symbol) : Option (List (VarName × SortType) × SortType × Term) :=
+  ctx.functionDefs.lookup sym
 
 -- Check if formula is in assumptions
 def Context.hasAssumption (ctx : Context) (f : Formula) : Bool :=

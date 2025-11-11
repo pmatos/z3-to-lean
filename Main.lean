@@ -34,7 +34,7 @@ def main (args : List String) : IO Unit := do
       | Except.error msg => do
         IO.println s!"✗ Verification failed: {msg}"
         IO.Process.exit 1
-      | Except.ok (ctx, stats) => do
+      | Except.ok (_ctx, stats) => do
         IO.println s!"✓ Verification succeeded!"
         IO.println ""
         IO.println "Statistics:"
