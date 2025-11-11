@@ -15,6 +15,64 @@ namespace Z3Proof.Checker
 open Z3Proof
 open Z3Proof.Algorithms
 
+-- Extract proof hint from a proof term
+-- Resolves formula references to their actual formula structures
+partial def extractProofHintFromTerm (ctx : Context) (term : Term) : Except String ProofHint :=
+  -- Helper to resolve a formula or proof reference to a formula
+  let rec resolveToFormula (id : Id) : Except String Formula := do
+    match ctx.lookupDefinition id with
+    | some (SortType.bool, formulaTerm) => ctx.termToFormula formulaTerm
+    | some (SortType.proof, proofTerm) =>
+        -- Extract conclusion from nested proof term
+        match proofTerm with
+        | Term.app "cc" [Term.const fid _] _ =>
+            -- CC proof's conclusion is its argument
+            resolveToFormula fid
+        | Term.app "euf" (Term.const goalId _ :: _) _ =>
+            -- EUF proof's conclusion is its goal (might be negated)
+            resolveToFormula goalId
+        | _ => Except.error s!"Cannot extract conclusion from proof term: {repr proofTerm}"
+    | some (sort, _) => Except.error s!"Reference {id} has sort {sort}, expected Bool or Proof"
+    | none => Except.error s!"Undefined reference: {id}"
+
+  match term with
+  | Term.app "euf" args _ => do
+      -- euf takes: goal premise1 premise2 ...
+      -- Arguments can be formula or proof references
+      if args.isEmpty then
+        Except.error "EUF proof term needs at least a goal"
+      let goal ← match args.head? with
+        | some (Term.const id _) => resolveToFormula id
+        | some t => Except.error s!"EUF goal must be a const reference, got {repr t}"
+        | none => Except.error "EUF missing goal"
+      let premises ← args.tail.mapM fun arg => do
+        match arg with
+        | Term.const id _ => resolveToFormula id
+        | _ => Except.error "EUF premises must be const references"
+      Except.ok (ProofHint.euf goal premises none)
+
+  | Term.app "farkas" args _ => do
+      -- farkas takes alternating coeff formula coeff formula ...
+      let rec extractPairs (remaining : List Term) : Except String (List (Int × Formula)) :=
+        match remaining with
+        | [] => Except.ok []
+        | Term.intLit n :: Term.const fid _ :: rest => do
+            let formula ← resolveToFormula fid
+            let rest' ← extractPairs rest
+            Except.ok ((n, formula) :: rest')
+        | _ => Except.error "Farkas proof term must alternate between int coefficients and formula references"
+      extractPairs args >>= fun pairs => Except.ok (ProofHint.farkas pairs)
+
+  | Term.app "cc" [Term.const fid _] _ => do
+      let formula ← resolveToFormula fid
+      Except.ok (ProofHint.cc formula)
+
+  | Term.app sym _ _ =>
+      Except.error s!"Unknown proof constructor: {sym}"
+
+  | _ =>
+      Except.error s!"Invalid proof term: {repr term}"
+
 -- Process a single proof command
 def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context :=
   match cmd with
@@ -69,8 +127,22 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
     -- Validate all formulas in the clause
     ctx.validateClause clause
 
+    -- Resolve proof term references
+    let resolvedHint ← match hint with
+      | ProofHint.ref id =>
+          -- Look up the proof term definition
+          match ctx.lookupDefinition id with
+          | some (SortType.proof, term) =>
+              -- Extract proof hint from the term
+              extractProofHintFromTerm ctx term
+          | some (sort, _) =>
+              Except.error s!"Reference {id} has sort {sort}, expected Proof"
+          | none =>
+              Except.error s!"Undefined proof term reference: {id}"
+      | _ => Except.ok hint
+
     -- Validate formulas referenced in hints
-    match hint with
+    match resolvedHint with
     | ProofHint.rup =>
       -- RUP: validate using unit propagation (currently simplified)
       -- TODO: Fix RUP validation to properly handle all cases
@@ -131,6 +203,10 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
       -- Validate all terms in bindings
       bindings.foldlM (fun _ (_var, term) => ctx.validateTerm term) ()
       Except.ok (ctx.addDerived clause)
+
+    | ProofHint.ref id =>
+      -- Should never reach here - references are resolved above
+      Except.error s!"Unresolved proof term reference: {id}"
 
   | ProofCommand.del clause =>
     -- Delete clause (garbage collection)

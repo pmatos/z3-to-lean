@@ -164,4 +164,35 @@ partial def Context.validateFormula (ctx : Context) (f : Formula) : Except Strin
 def Context.validateClause (ctx : Context) (c : Clause) : Except String Unit :=
   c.literals.foldlM (fun _ f => ctx.validateFormula f) ()
 
+/-! ## Term to Formula Conversion -/
+
+partial def Context.termToFormula (ctx : Context) (term : Term) : Except String Formula :=
+  match term with
+  | Term.const id _ =>
+      -- Recursively resolve if this is a defined constant
+      match ctx.lookupDefinition id with
+      | some (SortType.bool, defTerm) => ctx.termToFormula defTerm
+      | _ => Except.ok (Formula.atom id)
+  | Term.boolLit true => Except.error "Cannot convert boolean literal 'true' to formula"
+  | Term.boolLit false => Except.error "Cannot convert boolean literal 'false' to formula"
+  | Term.app "=" [t1, t2] _ => Except.ok (Formula.eq t1 t2)
+  | Term.app "<" [t1, t2] _ => Except.ok (Formula.lt t1 t2)
+  | Term.app ">" [t1, t2] _ => Except.ok (Formula.gt t1 t2)
+  | Term.app "<=" [t1, t2] _ => Except.ok (Formula.le t1 t2)
+  | Term.app ">=" [t1, t2] _ => Except.ok (Formula.ge t1 t2)
+  | Term.app "not" [arg] _ => do
+      let f ← ctx.termToFormula arg
+      Except.ok (Formula.not f)
+  | Term.app "and" args _ => do
+      let fs ← args.mapM (ctx.termToFormula ·)
+      Except.ok (Formula.and fs)
+  | Term.app "or" args _ => do
+      let fs ← args.mapM (ctx.termToFormula ·)
+      Except.ok (Formula.or fs)
+  | Term.app "=>" [t1, t2] _ => do
+      let f1 ← ctx.termToFormula t1
+      let f2 ← ctx.termToFormula t2
+      Except.ok (Formula.implies f1 f2)
+  | _ => Except.error s!"Cannot convert term to formula: {repr term}"
+
 end Z3Proof.Checker

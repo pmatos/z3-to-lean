@@ -83,6 +83,9 @@ inductive ProofHint where
   -- Quantifier instantiation with bindings
   | inst : List (VarName × Term) → ProofHint
 
+  -- Unresolved proof term reference (to be resolved during verification)
+  | ref : Id → ProofHint
+
   deriving Repr, BEq, Inhabited
 
 -- Proof commands
@@ -167,6 +170,7 @@ def ProofHint.toString : ProofHint → String
   | ProofHint.inst bindings =>
       let pairs := bindings.map fun (v, t) => s!"({v} {t.toString})"
       s!"inst {String.intercalate " " pairs}"
+  | ProofHint.ref id => s!"ref {id}"
 
 def ProofCommand.toString : ProofCommand → String
   | ProofCommand.declareFun sym args ret =>

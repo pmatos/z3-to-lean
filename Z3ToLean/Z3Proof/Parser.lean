@@ -330,7 +330,7 @@ partial def parseProofCommand : SExpr → Except String ProofCommand
     -- Try to parse as proof hint, or treat as reference
     let hint ← match proofTerm with
       | SExpr.atom "rup" => Except.ok ProofHint.rup
-      | SExpr.atom ref => Except.ok ProofHint.rup  -- Proof term reference, just use rup for now
+      | SExpr.atom ref => Except.ok (ProofHint.ref ref)  -- Proof term reference
       | _ => parseProofHint proofTerm
     let formulas ← literals.mapM parseFormula
     Except.ok (ProofCommand.infer { literals := formulas } hint)

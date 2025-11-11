@@ -64,9 +64,14 @@ partial def buildCongruenceClosure (premises : List Formula) : CongruenceClosure
 /-! ## EUF Validation -/
 
 def validateEUF (premises : List Formula) (goal : Formula) : Except String Unit :=
-  -- Extract equality from goal
-  match extractEquality goal with
-  | none => Except.error "EUF goal must be an equality"
+  -- Extract equality from goal (handling negations)
+  let equalityOpt := match goal with
+    | Formula.eq t1 t2 => some (t1, t2)
+    | Formula.not (Formula.eq t1 t2) => some (t1, t2)  -- Handle negated equality
+    | _ => extractEquality goal
+
+  match equalityOpt with
+  | none => Except.error s!"EUF goal must be an equality or negated equality, got: {repr goal}"
   | some (goalLhs, goalRhs) =>
       -- Build congruence closure from premises
       let cc := buildCongruenceClosure premises
@@ -78,7 +83,7 @@ def validateEUF (premises : List Formula) (goal : Formula) : Except String Unit 
       if cc.areEqual normGoalLhs normGoalRhs then
         Except.ok ()
       else
-        Except.error s!"EUF validation failed: {repr goal} does not follow from premises"
+        Except.error s!"EUF validation failed: equality {goalLhs} = {goalRhs} does not follow from premises"
 
 /-! ## CC (Congruence Closure) Validation -/
 
