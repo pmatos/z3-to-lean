@@ -8,6 +8,7 @@ import Z3ToLean.Z3Proof.AST
 import Z3ToLean.Checker.Context
 import Z3ToLean.Algorithms.Farkas
 import Z3ToLean.Algorithms.RUP
+import Z3ToLean.Algorithms.CongruenceClosure
 
 namespace Z3Proof.Checker
 
@@ -98,15 +99,27 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.euf goal premises _proofOpt =>
-      -- EUF: verify equality reasoning
-      -- Validate goal and all premises
+      -- EUF: verify equality reasoning using congruence closure
+      -- Step 1: Validate formulas exist
       ctx.validateFormula goal
       premises.foldlM (fun _ p => ctx.validateFormula p) ()
+
+      -- Step 2: Validate using congruence closure
+      -- Combine premises with assumptions
+      let allPremises := ctx.assumptions ++ premises
+      validateEUF allPremises goal
+
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.cc formula =>
       -- Congruence closure: verify congruence
+      -- Step 1: Validate formula exists
       ctx.validateFormula formula
+
+      -- Step 2: Validate using congruence closure
+      -- CC uses all assumptions as premises
+      validateCC ctx.assumptions formula
+
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.tseitin =>
