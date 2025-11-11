@@ -20,7 +20,8 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
   | ProofCommand.declareConst id sort =>
     Except.ok (ctx.declareConst id sort)
 
-  | ProofCommand.defineConst id sort term =>
+  | ProofCommand.defineConst id sort term => do
+    ctx.validateTerm term
     Except.ok (ctx.defineConst id sort term)
 
   | ProofCommand.defineFun sym params ret body =>
@@ -32,35 +33,37 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
     -- Proof rules are like function declarations with Proof return type
     Except.ok (ctx.declareFunction sym sorts SortType.proof)
 
-  | ProofCommand.assume formula =>
+  | ProofCommand.assume formula => do
+    ctx.validateFormula formula
     Except.ok (ctx.assume formula)
 
-  | ProofCommand.infer clause hint =>
-    -- For now, simplified verification:
-    -- - Check that formulas referenced exist
-    -- - Add clause to derived set
-    -- TODO: Actually verify the inference based on the hint
+  | ProofCommand.infer clause hint => do
+    -- Validate all formulas in the clause
+    ctx.validateClause clause
+
+    -- Validate formulas referenced in hints
     match hint with
     | ProofHint.rup =>
       -- RUP: should be derivable by unit propagation
-      -- For now, just accept it
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.farkas coeffs =>
       -- Farkas: verify linear arithmetic certificate
-      -- For now, just check that referenced formulas exist
+      -- Validate that all referenced formulas exist
       let formulas := coeffs.map (·.2)
-      -- Check if formulas are in assumptions or are atom references
-      -- Simplified: just accept
+      formulas.foldlM (fun _ f => ctx.validateFormula f) ()
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.euf goal premises _proofOpt =>
       -- EUF: verify equality reasoning
-      -- For now, just check premises exist
+      -- Validate goal and all premises
+      ctx.validateFormula goal
+      premises.foldlM (fun _ p => ctx.validateFormula p) ()
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.cc formula =>
       -- Congruence closure: verify congruence
+      ctx.validateFormula formula
       Except.ok (ctx.addDerived clause)
 
     | ProofHint.tseitin =>
@@ -69,6 +72,8 @@ def processCommand (ctx : Context) (cmd : ProofCommand) : Except String Context 
 
     | ProofHint.inst bindings =>
       -- Quantifier instantiation
+      -- Validate all terms in bindings
+      bindings.foldlM (fun _ (_var, term) => ctx.validateTerm term) ()
       Except.ok (ctx.addDerived clause)
 
   | ProofCommand.del clause =>

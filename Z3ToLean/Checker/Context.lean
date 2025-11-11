@@ -88,4 +88,80 @@ def Context.numAssumptions (ctx : Context) : Nat :=
 def Context.numDerived (ctx : Context) : Nat :=
   ctx.derived.length
 
+/-! ## Reference Validation -/
+
+def Context.isConstDefined (ctx : Context) (id : Id) : Bool :=
+  match ctx.lookupConst id, ctx.lookupDefinition id, ctx.lookupFunction id with
+  | some _, _, _ => true
+  | _, some _, _ => true
+  | _, _, some ([], _) => true
+  | none, none, _ => false
+
+def Context.isBuiltinFunction (sym : Symbol) : Bool :=
+  match sym with
+  | ">" | "<" | ">=" | "<=" | "=" | "not" | "and" | "or" | "=>" | "ite"
+  | "+" | "-" | "*" | "div" | "mod" | "abs"
+  | "distinct" | "iff" | "xor"
+  => true
+  | _ => false
+
+def Context.isFunctionDefined (ctx : Context) (sym : Symbol) : Bool :=
+  if Context.isBuiltinFunction sym then true
+  else ctx.lookupFunction sym |>.isSome
+
+partial def Context.validateTerm (ctx : Context) (t : Term) : Except String Unit :=
+  match t with
+  | Term.const id _ =>
+      if ctx.isConstDefined id then
+        Except.ok ()
+      else
+        Except.error s!"Undefined constant: {id}"
+  | Term.var name _ =>
+      if ctx.isConstDefined name then
+        Except.ok ()
+      else
+        Except.error s!"Undefined variable: {name}"
+  | Term.intLit _ => Except.ok ()
+  | Term.boolLit _ => Except.ok ()
+  | Term.app sym args _ =>
+      if !ctx.isFunctionDefined sym then
+        Except.error s!"Undefined function: {sym}"
+      else
+        args.foldlM (fun _ arg => ctx.validateTerm arg) ()
+
+partial def Context.validateFormula (ctx : Context) (f : Formula) : Except String Unit :=
+  match f with
+  | Formula.atom id =>
+      if ctx.isConstDefined id then
+        Except.ok ()
+      else
+        Except.error s!"Undefined atom: {id}"
+  | Formula.eq t1 t2 => do
+      ctx.validateTerm t1
+      ctx.validateTerm t2
+  | Formula.lt t1 t2 => do
+      ctx.validateTerm t1
+      ctx.validateTerm t2
+  | Formula.gt t1 t2 => do
+      ctx.validateTerm t1
+      ctx.validateTerm t2
+  | Formula.le t1 t2 => do
+      ctx.validateTerm t1
+      ctx.validateTerm t2
+  | Formula.ge t1 t2 => do
+      ctx.validateTerm t1
+      ctx.validateTerm t2
+  | Formula.not f' =>
+      ctx.validateFormula f'
+  | Formula.and fs =>
+      fs.foldlM (fun _ f' => ctx.validateFormula f') ()
+  | Formula.or fs =>
+      fs.foldlM (fun _ f' => ctx.validateFormula f') ()
+  | Formula.implies f1 f2 => do
+      ctx.validateFormula f1
+      ctx.validateFormula f2
+
+def Context.validateClause (ctx : Context) (c : Clause) : Except String Unit :=
+  c.literals.foldlM (fun _ f => ctx.validateFormula f) ()
+
 end Z3Proof.Checker
